@@ -64,6 +64,21 @@ def load_bopomofo_raw_policy():
     return namespace["_should_suppress_bopomofo_raw"]
 
 
+def load_handle_message(namespace):
+    """Load the message router with injected Win32 stand-ins."""
+    tree = ast.parse(POC_PATH.read_text(encoding="utf-8"), filename=str(POC_PATH))
+    selected = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_handle_message"
+    ]
+    if not selected:
+        raise AssertionError("_handle_message was not found")
+    module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
+    exec(compile(module, str(POC_PATH), "exec"), namespace, namespace)
+    return namespace["_handle_message"]
+
+
 class InterceptCharsTests(unittest.TestCase):
     def test_equals_uses_the_existing_intercept_path(self):
         self.assertIn("=", load_intercept_chars())
@@ -78,6 +93,51 @@ class InterceptCharsTests(unittest.TestCase):
         for character in "[]':\"<>?":
             with self.subTest(character=character):
                 self.assertNotIn(character, load_intercept_chars())
+
+    def test_intercepted_result_passes_character_to_lparam_builder(self):
+        built_for = []
+        forwarded = []
+
+        class State:
+            fix_enabled = True
+            diag_only = False
+            intercept_count = 0
+            pass_count = 0
+
+        def make_char_lparam(character):
+            if not isinstance(character, str) or len(character) != 1:
+                raise TypeError("VkKeyScanW requires one Unicode character")
+            built_for.append(character)
+            return 0x00100001
+
+        namespace = {
+            "WM_INPUT": 0x00FF,
+            "WM_CHAR": 0x0102,
+            "WM_KEYDOWN": 0x0100,
+            "WM_IME_COMPOSITION": 0x010F,
+            "WM_IME_CHAR": 0x0286,
+            "WM_IME_NOTIFY": 0x0282,
+            "GCS_RESULTSTR": 0x0800,
+            "MSG_NAMES": {},
+            "INTERCEPT_CHARS": {"="},
+            "_get_result_str": lambda _hwnd: "=",
+            "_make_char_lparam": make_char_lparam,
+            "_add_log": lambda _state, _text: None,
+        }
+        handle_message = load_handle_message(namespace)
+
+        result = handle_message(
+            State(),
+            lambda *args: forwarded.append(args) or 0,
+            101,
+            0x010F,
+            0,
+            0x0800,
+        )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(built_for, ["="])
+        self.assertEqual(forwarded, [(101, 0x0102, ord("="), 0x00100001)])
 
 
 class BopomofoRawInputPolicyTests(unittest.TestCase):
