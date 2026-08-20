@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 
-POC_PATH = Path(__file__).resolve().parents[1] / "ime_fix_poc.py"
+POC_PATH = Path(__file__).resolve().parents[1] / "blender_ime_fix" / "core.py"
 
 
 def load_hook_manager():

@@ -1,6 +1,13 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 SenPai-TW
+
 """
-Blender IME 修復 PoC v24（安全 Hook 生命週期版）
-================================================
+Blender IME Input Fix v24 core.
+
+This module owns the complete runtime: public Win32 API bindings, message
+policy, hook lifecycle, and Blender UI classes. The package facade only
+delegates ``register()`` and ``unregister()`` here.
+
 歷史測試結論：
   - 重複字元（從 v18-v22 測試確認）：-=@#%&*+{}| 和九宮格數字 0-9
   - 不重複字元：!$^()_英文字母 []':"<>? 等等
@@ -14,7 +21,7 @@ v24 策略：
   - CJK → 永遠正常通過
 
   Microsoft 注音首鍵：
-  - 台灣中文 Native 模式的主鍵盤 1-0/- → 攔截 WM_INPUT KeyDown
+  - 台灣中文 Native 模式、未按 Shift 的主鍵盤 1-0/- → 攔截 WM_INPUT KeyDown
   - 數字鍵盤、英數模式、其他輸入語系、KeyUp → 正常通過
   - Win32 查詢失敗 → fail-open，正常通過
 
@@ -55,6 +62,7 @@ WM_IME_NOTIFY           = 0x0282
 GCS_RESULTSTR = 0x0800
 
 MAPVK_VK_TO_VSC = 0
+VK_SHIFT         = 0x10
 RID_INPUT        = 0x10000003
 RIM_TYPEKEYBOARD = 1
 RI_KEY_BREAK      = 0x0001
@@ -65,7 +73,10 @@ IME_CMODE_NOCONVERSION = 0x0100
 
 LANGID_ZH_TW = 0x0404
 SUBCLASS_ID = 0x494D4532  # ASCII "IME2"；不含 Blender 版本資訊
-RUNTIME_STORE_MODULE = "_blender_ime_fix_runtime_store"
+ADDON_PACKAGE = __package__ or "blender_ime_fix"
+# Keep the reload-safe owner inside this add-on's package namespace. This
+# survives a module reload without claiming a process-global top-level name.
+RUNTIME_STORE_MODULE = ADDON_PACKAGE + "._runtime_store"
 SYNC_INTERVAL_SECONDS = 1.0
 BOPOMOFO_TOP_ROW_VKEYS = {
     0x30, 0x31, 0x32, 0x33, 0x34,
@@ -91,13 +102,20 @@ MSG_NAMES = {
 INTERCEPT_CHARS = set('-=@#%&*+{}|0123456789')
 
 
-def _should_suppress_bopomofo_raw(vkey, key_down, ime_native, input_lang_id):
+def _should_suppress_bopomofo_raw(
+    vkey,
+    key_down,
+    ime_native,
+    input_lang_id,
+    shift_down=False,
+):
     """Pure policy: keep Bopomofo-owned top-row KeyDown out of GHOST Raw Input."""
     return bool(
         key_down
         and ime_native
         and input_lang_id == LANGID_ZH_TW
         and vkey in BOPOMOFO_TOP_ROW_VKEYS
+        and not shift_down
     )
 
 
@@ -192,6 +210,8 @@ user32.GetRawInputData.argtypes = [
 user32.GetRawInputData.restype = wt.UINT
 user32.GetKeyboardLayout.argtypes = [wt.DWORD]
 user32.GetKeyboardLayout.restype = ctypes.c_void_p
+user32.GetKeyState.argtypes = [ctypes.c_int]
+user32.GetKeyState.restype = ctypes.c_short
 user32.DefWindowProcW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
 user32.DefWindowProcW.restype = ctypes.c_ssize_t
 user32.EnumWindows.argtypes = [WNDENUMPROC, wt.LPARAM]
@@ -398,6 +418,14 @@ def _read_raw_keyboard(raw_input_handle):
         return None
 
 
+def _is_shift_down():
+    """Return the queued Shift state; fail open if Win32 state cannot be read."""
+    try:
+        return bool(user32.GetKeyState(VK_SHIFT) & 0x8000)
+    except Exception:
+        return True
+
+
 def _get_ime_native_state(hwnd):
     """Return (native_mode, LANGID); fail-open callers treat false/zero as pass."""
     try:
@@ -450,7 +478,7 @@ def _make_char_lparam(character):
 def _handle_message(state, call_next, hwnd, msg, wp, lp):
 
     # ════════════════════════════════════════════
-    # Microsoft 注音：阻止 GHOST Raw Input 插入首鍵的 1-0/-
+    # Microsoft 注音：阻止 GHOST Raw Input 插入未加 Shift 的首鍵 1-0/-
     # ════════════════════════════════════════════
     if msg == WM_INPUT and (state.fix_enabled or state.diag_only):
         raw_key = _read_raw_keyboard(lp)
@@ -458,7 +486,11 @@ def _handle_message(state, call_next, hwnd, msg, wp, lp):
             vkey, key_down = raw_key
             ime_native, input_lang_id = _get_ime_native_state(hwnd)
             if _should_suppress_bopomofo_raw(
-                vkey, key_down, ime_native, input_lang_id
+                vkey,
+                key_down,
+                ime_native,
+                input_lang_id,
+                shift_down=_is_shift_down(),
             ):
                 if state.diag_only:
                     _add_log(
@@ -806,6 +838,34 @@ def _current_state():
     return instance.state if instance is not None else S
 
 
+def _set_developer_panel_visible(visible):
+    """Register or remove the diagnostics panel without touching the hook."""
+    instance = _current_instance()
+    if instance is None:
+        return False
+
+    registered = IME_PT_panel in instance.registered_classes
+    if visible and not registered:
+        bpy.utils.register_class(IME_PT_panel)
+        instance.registered_classes.append(IME_PT_panel)
+    elif not visible and registered:
+        bpy.utils.unregister_class(IME_PT_panel)
+        instance.registered_classes.remove(IME_PT_panel)
+    return True
+
+
+def _update_developer_panel(preferences, _context):
+    """Apply the Add-on Preferences toggle immediately."""
+    if not _set_developer_panel_visible(preferences.show_developer_panel):
+        _add_log(_current_state(), "⚠️ Runtime 尚未就緒，無法切換開發面板")
+
+
+def _developer_panel_preference_enabled():
+    """Read the persisted preference after its RNA class is registered."""
+    addon = bpy.context.preferences.addons.get(ADDON_PACKAGE)
+    return bool(addon and addon.preferences.show_developer_panel)
+
+
 def _install():
     instance = _current_instance()
     if instance is None:
@@ -901,7 +961,7 @@ class IME_PT_panel(bpy.types.Panel):
         col = box2.column(align=True)
         col.label(text="v24: 安全 Hook + 字元去重 + 注音首鍵")
         col.label(text=f"  攔截: {''.join(sorted(INTERCEPT_CHARS))}")
-        col.label(text="  注音主鍵盤 1-0/- → Raw Input 攔截")
+        col.label(text="  注音主鍵盤未按 Shift 的 1-0/- → Raw Input 攔截")
         col.label(text="  其他 ASCII/CJK → 正常通過")
         col.label(text="  不使用 Blender 私有記憶體或版本 DLL")
 
@@ -927,11 +987,25 @@ class IME_PT_panel(bpy.types.Panel):
                 col.label(text=entry)
 
 
+class IME_AddonPreferences(bpy.types.AddonPreferences):
+    bl_idname = ADDON_PACKAGE
+
+    show_developer_panel: bpy.props.BoolProperty(
+        name="顯示開發者診斷面板",
+        description="顯示 3D Viewport 的 IME 診斷面板、Hook 狀態與事件日誌",
+        default=False,
+        update=_update_developer_panel,
+    )
+
+    def draw(self, _context):
+        self.layout.prop(self, "show_developer_panel")
+
+
 # ══════════════════════════════════════════════
 # 註冊
 # ══════════════════════════════════════════════
 
-_classes = (IME_OT_action, IME_PT_panel)
+_classes = (IME_OT_action, IME_AddonPreferences)
 
 def register():
     store = _runtime_store()
@@ -944,6 +1018,9 @@ def register():
         for cls in _classes:
             bpy.utils.register_class(cls)
             instance.registered_classes.append(cls)
+        if _developer_panel_preference_enabled():
+            if not _set_developer_panel_visible(True):
+                raise RuntimeError("無法依 Add-on 設定啟用開發者診斷面板")
         if not instance.start():
             raise RuntimeError(
                 instance.state.last_hook_error or "Hook 或視窗同步計時器啟動失敗"
@@ -963,6 +1040,3 @@ def unregister():
             "Hook 無法安全卸載；callback 已保留，請完整重開 Blender"
         )
     store.instance = None
-
-if __name__ == "__main__":
-    register()

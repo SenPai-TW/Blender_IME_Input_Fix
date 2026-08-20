@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 
-POC_PATH = Path(__file__).resolve().parents[1] / "ime_fix_poc.py"
+POC_PATH = Path(__file__).resolve().parents[1] / "blender_ime_fix" / "core.py"
 
 
 def load_intercept_chars():
@@ -141,6 +141,27 @@ class InterceptCharsTests(unittest.TestCase):
 
 
 class BopomofoRawInputPolicyTests(unittest.TestCase):
+    def test_shifted_top_row_symbols_are_not_suppressed(self):
+        should_suppress = load_bopomofo_raw_policy()
+        shifted_symbols = {
+            "@": 0x32,
+            "#": 0x33,
+            "%": 0x35,
+            "&": 0x37,
+            "*": 0x38,
+        }
+        for character, vkey in shifted_symbols.items():
+            with self.subTest(character=character, vkey=vkey):
+                self.assertFalse(
+                    should_suppress(
+                        vkey,
+                        True,
+                        True,
+                        0x0404,
+                        shift_down=True,
+                    )
+                )
+
     def test_zh_tw_native_top_row_bopomofo_keys_are_suppressed(self):
         should_suppress = load_bopomofo_raw_policy()
         top_row_vkeys = (*range(0x30, 0x3A), 0xBD)
@@ -166,6 +187,55 @@ class BopomofoRawInputPolicyTests(unittest.TestCase):
     def test_key_up_is_not_suppressed(self):
         should_suppress = load_bopomofo_raw_policy()
         self.assertFalse(should_suppress(0x31, False, True, 0x0404))
+
+
+class ShiftedRawInputRoutingTests(unittest.TestCase):
+    def test_shifted_top_row_raw_input_reaches_blender(self):
+        forwarded = []
+        def_window_calls = []
+
+        class State:
+            fix_enabled = True
+            diag_only = False
+            bopomofo_count = 0
+
+        class User32:
+            @staticmethod
+            def DefWindowProcW(*args):
+                def_window_calls.append(args)
+                return 99
+
+        namespace = {
+            "WM_INPUT": 0x00FF,
+            "WM_CHAR": 0x0102,
+            "WM_KEYDOWN": 0x0100,
+            "WM_IME_COMPOSITION": 0x010F,
+            "WM_IME_CHAR": 0x0286,
+            "WM_IME_NOTIFY": 0x0282,
+            "GCS_RESULTSTR": 0x0800,
+            "MSG_NAMES": {},
+            "INTERCEPT_CHARS": set(),
+            "_read_raw_keyboard": lambda _lp: (0x32, True),
+            "_get_ime_native_state": lambda _hwnd: (True, 0x0404),
+            "_is_shift_down": lambda: True,
+            "_should_suppress_bopomofo_raw": load_bopomofo_raw_policy(),
+            "_add_log": lambda _state, _text: None,
+            "user32": User32(),
+        }
+        handle_message = load_handle_message(namespace)
+
+        result = handle_message(
+            State(),
+            lambda *args: forwarded.append(args) or 17,
+            101,
+            0x00FF,
+            0,
+            1234,
+        )
+
+        self.assertEqual(result, 17)
+        self.assertEqual(forwarded, [(101, 0x00FF, 0, 1234)])
+        self.assertEqual(def_window_calls, [])
 
 
 if __name__ == "__main__":

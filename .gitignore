@@ -1,0 +1,12 @@
+# Generated release artifacts
+/dist/
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
