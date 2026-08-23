@@ -388,8 +388,9 @@ def _get_result_str(hwnd):
         n = imm32.ImmGetCompositionStringW(hIMC, GCS_RESULTSTR, None, 0)
         if n <= 0:
             return ''
-        buf = ctypes.create_unicode_buffer(n // 2 + 1)
-        imm32.ImmGetCompositionStringW(hIMC, GCS_RESULTSTR, buf, n + 2)
+        buf_chars = n // 2 + 1
+        buf = ctypes.create_unicode_buffer(buf_chars)
+        imm32.ImmGetCompositionStringW(hIMC, GCS_RESULTSTR, buf, buf_chars * 2)
         return buf.value
     finally:
         imm32.ImmReleaseContext(hwnd, hIMC)
@@ -579,12 +580,12 @@ def _handle_message(state, call_next, hwnd, msg, wp, lp):
         extra = ''
         if msg == WM_CHAR:
             try:   extra = f" '{chr(wp)}'"
-            except: extra = f" ({wp:#x})"
+            except Exception: extra = f" ({wp:#x})"
         elif msg == WM_KEYDOWN:
             extra = f" VK={wp:#04x}"
         elif msg == WM_IME_CHAR:
             try:   extra = f" '{chr(wp)}'"
-            except: extra = f" ({wp:#x})"
+            except Exception: extra = f" ({wp:#x})"
         _add_log(state, f"  {name}{extra}")
 
     return call_next(hwnd, msg, wp, lp)
