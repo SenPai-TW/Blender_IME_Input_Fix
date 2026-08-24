@@ -4,9 +4,9 @@ Windows 專用 Blender Add-on，用來修正 Microsoft 注音輸入法造成的�
 
 ## 安裝
 
-1. 從 GitHub Releases 下載 `blender_ime_input_fix-v0.1.0.zip`；開發者也可執行 `python tools/build_addon.py` 自行建置。
+1. 從 GitHub Releases 下載 `blender_ime_input_fix-v0.1.1.zip`；開發者也可執行 `python tools/build_addon.py` 自行建置。
 2. 在 Blender 開啟 `Edit > Preferences > Add-ons`。
-3. 選擇 `Install from Disk`，選取下載的 `blender_ime_input_fix-v0.1.0.zip`。
+3. 選擇 `Install from Disk`，選取下載的 `blender_ime_input_fix-v0.1.1.zip`。
 4. 啟用 `System: Blender IME Input Fix`。
 
 Add-on 啟用後會自動啟動修復，不會在 3D Viewport 顯示額外的 N 面板。停用 Add-on 時會移除所有已安裝的 Windows subclass hook。

@@ -1,23 +1,23 @@
-# Blender IME Input Fix handoff — 2026-08-23
+# Blender IME Input Fix handoff — 2026-08-24
 
 ## Next-session objective
 
-Commit and push the security hardening changes (M1 & L1 fixes from security audit), refresh the release artifact, and proceed with GitHub Release when ready. Do not push or publish releases unless the user explicitly requests it.
+Commit the `0.1.1` version bump, then create the matching tag and GitHub Release when ready. Do not commit, tag, push, or publish a release unless the user explicitly requests it.
 
 ## Repository state
 
-- Repository: `C:\Users\Senpai\OneDrive\Work\GitHub\Blender_IME_Input_Fix`
+- Repository: `D:\GitHub\Blender_IME_Input_Fix`
 - Remote: `https://github.com/SenPai-TW/Blender_IME_Input_Fix.git`
 - Branch: `main`
-- Current HEAD: `a3d3906` (`feat: package v0.1.0 add-on and fix shifted symbol input`)
-- Git Tag: `v0.1.0`
-- Working tree: Contains uncommitted security hardening changes in `blender_ime_fix/core.py`.
+- Current HEAD and `origin/main`: `994da44` (`fix: harden composition buffer calculation and log exception handling`)
+- Existing Git tag: `v0.1.0` points to `a3d3906`; `v0.1.1` has not been created.
+- Working tree: Contains the intentional `0.1.1` version bump in metadata, README, tests, and this handoff.
 
 ## Current implementation & recent changes
 
 - Add-on metadata and lifecycle facade: `blender_ime_fix/__init__.py`
 - Core Win32/IME runtime: `blender_ime_fix/core.py`
-  - **Recent Hardening (2026-08-23)**:
+  - **Security hardening committed in `994da44` (2026-08-23)**:
     - **M1 Fix**: Corrected buffer size passed to `ImmGetCompositionStringW` (`buf_chars * 2`) to strictly match the allocated buffer and prevent theoretical off-by-one under non-standard byte counts.
     - **L1 Fix**: Replaced bare `except:` with explicit `except Exception:` in `_handle_message` logging branches.
 - Install/build/compatibility documentation: `README.md`
@@ -28,8 +28,8 @@ Commit and push the security hardening changes (M1 & L1 fixes from security audi
 
 ## Release artifact
 
-- Local artifact: `dist/blender_ime_input_fix-v0.1.0.zip`
-- SHA-256: `F356C04FB122EF1D1DEDBC992603B80ED8F45A9B994315C0780E8E240BE90DD7`
+- Local artifact: `dist/blender_ime_input_fix-v0.1.1.zip`
+- SHA-256: `ADFCC68245BE7AA7A55F368CC8519EAC32849D3B141AA586D9BD19C7A468CCA5`
 - ZIP members:
   - `blender_ime_fix/__init__.py`
   - `blender_ime_fix/core.py`
@@ -45,17 +45,18 @@ python tools\build_addon.py
 
 - Latest offline suite: **27/27 passed**.
 - Run command: `python -m unittest discover -s tests -v`
-- Full ZIP lifecycle matrix passed on installed Blender versions (3.0.0 through 5.2.0).
+- The rebuilt `v0.1.1` ZIP passed lifecycle checks on Blender 3.0.0 and 5.2.0.
+- An earlier `v0.1.0` ZIP passed the full installed-version lifecycle matrix from Blender 3.0.0 through 5.2.0.
 - Actual input behavior confirmed in Blender 5.2 on Windows 11 with Microsoft Bopomofo (duplicate ASCII/numpad, symbols, and Bopomofo raw-input initial key suppression all resolved).
 
 ## Suggested next steps
 
-1. Review and commit the security hardening changes using the suggested commit message:
+1. Review and commit the `0.1.1` version bump using a release-preparation commit message such as:
    ```text
-   fix: harden IME buffer size calculation and specify log exception handling
+   chore: bump add-on version to 0.1.1
    ```
-2. Push commits to `origin/main`.
-3. If ready, create or update GitHub Release with tag `v0.1.0` and upload `dist/blender_ime_input_fix-v0.1.0.zip`.
+2. Push the commit to `origin/main`, then create tag `v0.1.1` on that exact commit.
+3. Create the GitHub Release from tag `v0.1.1` and upload `dist/blender_ime_input_fix-v0.1.1.zip`.
 
 ## Suggested skills
 

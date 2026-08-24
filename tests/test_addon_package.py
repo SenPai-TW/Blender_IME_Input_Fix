@@ -37,7 +37,7 @@ class AddonPackageTests(unittest.TestCase):
     def test_legacy_addon_metadata_declares_supported_floor(self):
         info = load_bl_info()
         self.assertEqual(info["name"], "Blender IME Input Fix")
-        self.assertEqual(info["version"], (0, 1, 0))
+        self.assertEqual(info["version"], (0, 1, 1))
         self.assertEqual(info["blender"], (2, 80, 0))
         self.assertEqual(info["category"], "System")
 
@@ -87,7 +87,7 @@ class AddonPackageTests(unittest.TestCase):
         builder = load_build_module()
         with tempfile.TemporaryDirectory() as temporary_directory:
             archive_path, digest = builder.build(temporary_directory)
-            self.assertEqual(archive_path.name, "blender_ime_input_fix-v0.1.0.zip")
+            self.assertEqual(archive_path.name, "blender_ime_input_fix-v0.1.1.zip")
             self.assertEqual(len(digest), 64)
             with zipfile.ZipFile(archive_path) as archive:
                 self.assertEqual(
